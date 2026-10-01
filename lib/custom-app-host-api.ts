@@ -293,11 +293,15 @@ function resolveCustomAppApiConfig(app: InstalledCustomApp, record: Record<strin
     if (found) return found;
   }
 
-  // 兜底 1：角色的全局聊天 API
+  // 兜底 1：角色的默认设定
+  // 这里必须用直接读 defaults 而不是 resolveBinding("chat")，
+  // 因为 resolveBinding 会一直往上追溯，导致它拿到系统的 globalDefaults。
+  // 我们只想要：如果角色【自己明确配了 defaults】，那就用角色的。
+  // 否则，应该让它掉到下面，使用系统的 globalDefaults。
   if (characterId) {
-    const chatSlot = resolveBinding(bindings, characterId, "chat");
-    if (chatSlot.apiConfigId) {
-      const found = apiConfigs.find(config => config.id === chatSlot.apiConfigId);
+    const charBinding = bindings.characterBindings.find(b => b.characterId === characterId);
+    if (charBinding?.defaults?.apiConfigId) {
+      const found = apiConfigs.find(config => config.id === charBinding.defaults.apiConfigId);
       if (found) return found;
     }
   }
