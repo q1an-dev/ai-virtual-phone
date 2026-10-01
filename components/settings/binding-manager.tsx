@@ -121,7 +121,7 @@ export function BindingManager() {
     const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
     const [activeGlobalSheetField, setActiveGlobalSheetField] = useState<BindingField | null>(null);
     const [activeSlotSheetField, setActiveSlotSheetField] = useState<BindingField | null>(null);
-    const [activeAuxSheetField, setActiveAuxSheetField] = useState<AuxBindingField | null>(null);
+    const [activeAuxSheetField, setActiveAuxSheetField] = useState<ExtendedAuxBindingField | null>(null);
     const [showCharacterPicker, setShowCharacterPicker] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
 
@@ -517,8 +517,18 @@ export function BindingManager() {
         );
     };
 
-    const renderAuxFieldIcon = (field: AuxBindingField) => {
-        const visual = AUX_FIELD_VISUALS[field];
+    type CustomAppAuxField = `customAppApiConfigId:${string}`;
+    type ExtendedAuxBindingField = AuxBindingField | CustomAppAuxField;
+    
+    const renderAuxFieldIcon = (field: ExtendedAuxBindingField) => {
+        if (field.startsWith("customAppApiConfigId:")) {
+            return (
+                <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(BINDING_ACCENTS.api)}>
+                    <Code2 size={22} strokeWidth={1.8} />
+                </span>
+            );
+        }
+        const visual = AUX_FIELD_VISUALS[field as AuxBindingField];
         const Icon = visual.icon;
         return (
             <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(visual.color)}>
@@ -527,18 +537,41 @@ export function BindingManager() {
         );
     };
 
-    const updateAuxField = (field: AuxBindingField, value: string | undefined) => {
-        persist({ ...config, [field]: value || undefined });
+    const updateAuxField = (field: ExtendedAuxBindingField, value: string | undefined) => {
+        if (field.startsWith("customAppApiConfigId:")) {
+            const appId = field.split(":")[1];
+            const newCustomAppApiConfigs = { ...(config.customAppApiConfigs || {}) };
+            if (value) {
+                newCustomAppApiConfigs[appId] = value;
+            } else {
+                delete newCustomAppApiConfigs[appId];
+            }
+            persist({ ...config, customAppApiConfigs: newCustomAppApiConfigs });
+        } else {
+            persist({ ...config, [field as AuxBindingField]: value || undefined });
+        }
     };
 
     const renderAuxSelect = (
-        field: AuxBindingField,
+        field: ExtendedAuxBindingField,
         label: string,
     ) => {
-        const currentValue = config[field];
+        const isCustomApp = field.startsWith("customAppApiConfigId:");
+        const appId = isCustomApp ? field.split(":")[1] : null;
+        let currentValue: string | undefined;
+        let finalLabel = label;
+        if (isCustomApp && appId) {
+            currentValue = config.customAppApiConfigs?.[appId];
+            const app = customApps.find(a => a.id === appId);
+            if (app) finalLabel = `${app.name} 专属 API`;
+        } else {
+            currentValue = config[field as AuxBindingField];
+        }
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
         const selectedOption = options.find(o => o.id === currentValue);
-        const displayValue = selectedOption ? selectedOption.name : "继承全局";
+        let displayValue = selectedOption ? selectedOption.name : "未设置";
+        if (!selectedOption && !isCustomApp) displayValue = "继承全局";
+        else if (!selectedOption && isCustomApp) displayValue = "未设置";
 
         return (
             <div key={field} className="binding-aux-select">
@@ -553,8 +586,8 @@ export function BindingManager() {
                 >
                     {renderAuxFieldIcon(field)}
                     <span className="binding-card-copy">
-                        <span className="binding-choice-label">{label}</span>
-                        <span className="binding-choice-desc">{getAuxFieldDescription(field)}</span>
+                        <span className="binding-choice-label">{finalLabel}</span>
+                        <span className="binding-choice-desc">{isCustomApp ? "为该应用强制指定统一的 API" : getAuxFieldDescription(field as AuxBindingField)}</span>
                     </span>
                     <span className="binding-choice-row">
                         <span className={selectedOption ? "binding-choice-value" : "binding-choice-value is-empty"}>{displayValue}</span>
@@ -842,10 +875,24 @@ export function BindingManager() {
 
     const renderAuxPickerDialog = () => {
         if (!activeAuxSheetField) return null;
-        const field = activeAuxSheetField;
-        const label = getAuxFieldLabel(field);
+        const field = activeAuxSheetField as ExtendedAuxBindingField;
+        const isCustomApp = field.startsWith("customAppApiConfigId:");
+        let label = "API 配置";
+        let selectedValue: string | undefined;
+        let emptyLabel = "继承全局";
+        
+        if (isCustomApp) {
+            const appId = field.split(":")[1];
+            const app = customApps.find(a => a.id === appId);
+            label = app ? `${app.name} API` : "应用 API";
+            selectedValue = config.customAppApiConfigs?.[appId];
+            emptyLabel = "未设置";
+        } else {
+            label = getAuxFieldLabel(field as AuxBindingField);
+            selectedValue = config[field as AuxBindingField];
+        }
+        
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
-        const selectedValue = config[field];
 
         return (
             <div className="modal-overlay" data-ui="modal" onClick={() => setActiveAuxSheetField(null)}>
@@ -880,7 +927,7 @@ export function BindingManager() {
                                 }}
                             >
                                 <span className="binding-sheet-check">{!selectedValue && <Check size={15} />}</span>
-                                <span className="binding-sheet-option-text">继承全局</span>
+                                <span className="binding-sheet-option-text">{emptyLabel}</span>
                             </button>
                             {options.length === 0 ? (
                                 <div className="binding-sheet-empty">暂无可选 API 配置，请先在 API 设置页面创建。</div>
@@ -987,6 +1034,10 @@ export function BindingManager() {
                             {renderAuxSelect("mascotApiConfigId", "小卷助手 API")}
                             {renderAuxSelect("qaApiConfigId", "工坊 API")}
                             {renderAuxSelect("reasoningTranslateApiConfigId", "思维链翻译 API")}
+                            {customApps.length > 0 && <div className="h-[1px] bg-gray-200/50 dark:bg-gray-800/50 my-2" />}
+                            {customApps.map(app => 
+                                renderAuxSelect(`customAppApiConfigId:${app.id}` as ExtendedAuxBindingField, `${app.name} 专属 API`)
+                            )}
                         </div>
                     </section>
                 </>

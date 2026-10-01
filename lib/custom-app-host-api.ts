@@ -274,20 +274,35 @@ function resolveCustomAppApiConfig(app: InstalledCustomApp, record: Record<strin
   const apiConfigs = loadApiConfigs();
   const explicitId = cleanText(record.apiConfigId ?? record.configId, 160);
   if (explicitId) return apiConfigs.find(config => config.id === explicitId) ?? null;
-  const characterId = cleanText(record.characterId, 160);
+  
   const bindings = loadBindingConfig();
+  const characterId = cleanText(record.characterId, 160);
+
   if (characterId) {
+    // 优先级 1：角色为该自定义APP绑定的专属API
     const appSlot = resolveBinding(bindings, characterId, `custom_app:${app.id}`);
     if (appSlot.apiConfigId) {
       const found = apiConfigs.find(config => config.id === appSlot.apiConfigId);
       if (found) return found;
     }
+  }
+
+  // 优先级 2：全局为该自定义APP绑定的专属API
+  if (bindings.customAppApiConfigs?.[app.id]) {
+    const found = apiConfigs.find(config => config.id === bindings.customAppApiConfigs![app.id]);
+    if (found) return found;
+  }
+
+  // 兜底 1：角色的全局聊天 API
+  if (characterId) {
     const chatSlot = resolveBinding(bindings, characterId, "chat");
     if (chatSlot.apiConfigId) {
       const found = apiConfigs.find(config => config.id === chatSlot.apiConfigId);
       if (found) return found;
     }
   }
+  
+  // 兜底 2：系统全局默认 API
   if (bindings.globalDefaults.apiConfigId) {
     const found = apiConfigs.find(config => config.id === bindings.globalDefaults.apiConfigId);
     if (found) return found;
