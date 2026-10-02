@@ -1044,6 +1044,9 @@ export function resolveBinding(
     const customAppApiId = getCustomAppExclusiveApiConfigId(config, appId);
 
     if (!characterId) {
+        // 没有角色时（群聊、用户自己的日历、冒险大厅等）也用该应用的全局 API；只取 API，不动预设/世界书/正则
+        const appDefaultApiId = appId ? config.appDefaults?.[appId]?.apiConfigId : undefined;
+        if (appDefaultApiId) resolved.apiConfigId = appDefaultApiId;
         if (customAppApiId) resolved.apiConfigId = customAppApiId;
         return resolved;
     }
