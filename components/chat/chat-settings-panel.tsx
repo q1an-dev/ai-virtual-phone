@@ -294,6 +294,7 @@ export function ChatSettingsPanel({
     offlineHistoryBusy = false,
 }: ChatSettingsPanelProps) {
     const [backgroundImage, setBackgroundImage] = useState<string>(session.backgroundImage || "");
+    const [offlineBackgroundImage, setOfflineBackgroundImage] = useState<string>(session.offlineBackgroundImage || "");
     const [alias, setAlias] = useState<string>(session.alias || "");
     const [videoBackground, setVideoBackground] = useState<string>(session.videoBackground || "");
     const [voiceBackground, setVoiceBackground] = useState<string>(session.voiceBackground || "");
@@ -1157,12 +1158,24 @@ export function ChatSettingsPanel({
                 <div className="menu-group">
                     <label className="menu-item">
                         <ChatInfoIcon icon={ImageIcon} color={BINDING_ACCENTS.api} />
-                        <div className="menu-label-group"><span className="menu-label">聊天背景</span></div>
+                        <div className="menu-label-group"><span className="menu-label">线上聊天背景</span></div>
                         <div className="menu-right">
                             {backgroundImage && <><span className="menu-desc mr-1">已设置</span><button className="menu-desc mr-1 text-[var(--c-danger)]" onClick={e => { e.preventDefault(); setBackgroundImage(""); updateSession({ backgroundImage: "" }); }}>清除</button></>}
                             <ChevronRight size={16} />
                         </div>
                         <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setBackgroundImage, "backgroundImage")} className="hidden" />
+                    </label>
+                    <label className="menu-item">
+                        <ChatInfoIcon icon={ImageIcon} color={BINDING_ACCENTS.preset} />
+                        <div className="menu-label-group">
+                            <span className="menu-label">线下聊天背景</span>
+                            <span className="menu-desc">不设置则沿用线上背景</span>
+                        </div>
+                        <div className="menu-right">
+                            {offlineBackgroundImage && <><span className="menu-desc mr-1">已设置</span><button className="menu-desc mr-1 text-[var(--c-danger)]" onClick={e => { e.preventDefault(); setOfflineBackgroundImage(""); updateSession({ offlineBackgroundImage: "" }); }}>清除</button></>}
+                            <ChevronRight size={16} />
+                        </div>
+                        <input type="file" accept="image/*" onChange={e => handleImageUpload(e, setOfflineBackgroundImage, "offlineBackgroundImage")} className="hidden" />
                     </label>
                     {session.isGroup ? (
                         <>
