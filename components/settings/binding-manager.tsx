@@ -906,48 +906,44 @@ export function BindingManager() {
                 <p className="settings-menu-section-title">Custom Apps</p>
                 <div className="flex flex-col gap-3">
                     {renderCustomAppCard({
-                        key: "toggle",
+                        key: "extra-prompt",
+                        icon: <Sparkles size={21} strokeWidth={1.8} />,
+                        accent: BINDING_ACCENTS.preset,
+                        label: "通用提示词",
+                        desc: extraPrompt ? extraPrompt.replace(/\s+/g, " ") : "如破限，开启的应用每次请求都带上",
+                        value: extraPrompt ? "已填写" : "未填写",
+                        isEmpty: !extraPrompt,
+                        onClick: () => setExtraPromptDraft(config.customAppExtraPrompt ?? ""),
+                    })}
+                    {renderCustomAppCard({
+                        key: "app-list",
                         icon: <LayoutGrid size={22} strokeWidth={1.8} />,
                         accent: "#14b8a6",
-                        label: "自定义应用",
-                        desc: "专属 API 与通用提示词",
+                        label: "应用列表",
+                        desc: "每个应用的专属 API、是否带提示词",
                         value: customAppSectionOpen ? "收起" : `${customApps.length} 个应用`,
                         onClick: () => setCustomAppSectionOpen(open => !open),
                         chevronOpen: customAppSectionOpen,
                     })}
-                    {customAppSectionOpen && (
-                        <>
-                            {renderCustomAppCard({
-                                key: "extra-prompt",
-                                icon: <Sparkles size={21} strokeWidth={1.8} />,
-                                accent: BINDING_ACCENTS.preset,
-                                label: "通用提示词",
-                                desc: extraPrompt ? extraPrompt.replace(/\s+/g, " ") : "如破限，开启的应用每次请求都带上",
-                                value: extraPrompt ? "已填写" : "未填写",
-                                isEmpty: !extraPrompt,
-                                onClick: () => setExtraPromptDraft(config.customAppExtraPrompt ?? ""),
-                            })}
-                            {customApps.map(app => {
-                                const apiName = apiConfigs.find(c => c.id === config.customAppApiConfigs?.[app.id]);
-                                const promptOn = !disabledIds.has(app.id);
-                                return renderCustomAppCard({
-                                    key: app.id,
-                                    icon: app.iconDataUrl
-                                        ? <img src={app.iconDataUrl} alt="" className="h-full w-full rounded-full object-cover" />
-                                        : <IconGlyph id={"appmarket" as IconId} className="binding-app-icon-glyph" />,
-                                    accent: "#14b8a6",
-                                    label: app.name,
-                                    desc: `通用提示词：${promptOn ? "带上" : "不带"}`,
-                                    value: apiName ? (apiName.name || apiName.provider) : "未设置 API",
-                                    isEmpty: !apiName,
-                                    onClick: () => {
-                                        reloadData();
-                                        setActiveCustomAppId(app.id);
-                                    },
-                                });
-                            })}
-                        </>
-                    )}
+                    {customAppSectionOpen && customApps.map(app => {
+                        const apiName = apiConfigs.find(c => c.id === config.customAppApiConfigs?.[app.id]);
+                        const promptOn = !disabledIds.has(app.id);
+                        return renderCustomAppCard({
+                            key: app.id,
+                            icon: app.iconDataUrl
+                                ? <img src={app.iconDataUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                                : <IconGlyph id={"appmarket" as IconId} className="binding-app-icon-glyph" />,
+                            accent: "#14b8a6",
+                            label: app.name,
+                            desc: `通用提示词：${promptOn ? "带上" : "不带"}`,
+                            value: apiName ? (apiName.name || apiName.provider) : "未设置 API",
+                            isEmpty: !apiName,
+                            onClick: () => {
+                                reloadData();
+                                setActiveCustomAppId(app.id);
+                            },
+                        });
+                    })}
                 </div>
             </section>
         );
