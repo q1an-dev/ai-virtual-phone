@@ -919,7 +919,7 @@ export function BindingManager() {
                         key: "app-list",
                         icon: <LayoutGrid size={22} strokeWidth={1.8} />,
                         accent: "#14b8a6",
-                        label: "应用列表",
+                        label: "自定义应用列表",
                         desc: "每个应用的专属 API、是否带提示词",
                         value: customAppSectionOpen ? "收起" : `${customApps.length} 个应用`,
                         onClick: () => setCustomAppSectionOpen(open => !open),
