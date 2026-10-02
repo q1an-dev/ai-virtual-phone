@@ -813,6 +813,30 @@
   font-size: calc(12.6px*var(--app-text-scale,1));
 }
 
+.binding-picker-dialog-wide {
+  width: min(88%, 360px);
+}
+
+.binding-sheet-section-title {
+  margin: 8px 4px 0;
+  color: var(--c-text);
+  font-size: calc(10.8px*var(--app-text-scale,1));
+  font-weight: 600;
+}
+
+.binding-sheet-hint {
+  margin: 4px 4px 0;
+  color: var(--c-text);
+  font-size: calc(10.8px*var(--app-text-scale,1));
+  line-height: 1.5;
+}
+
+.binding-prompt-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+}
+
 .binding-sheet-empty {
   padding: 18px 12px;
   text-align: center;

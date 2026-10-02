@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useContext, type CSSProperties } from "react";
+import { useState, useEffect, useContext, type CSSProperties, type ReactNode } from "react";
 import {
     Asterisk,
     BookOpen,
@@ -10,6 +10,7 @@ import {
     ChevronRight,
     Code2,
     LayoutGrid,
+    Sparkles,
     Languages,
     Layers,
     Mic,
@@ -98,13 +99,6 @@ const bindingAccentStyle = (color: string): CSSProperties => ({
 
 const CUSTOM_APP_BINDING_PREFIX = "custom_app:";
 
-/** 「辅助 API」里每个自定义应用的专属 API 选项，形如 customAppApiConfigId:<应用 id> */
-const CUSTOM_APP_AUX_FIELD_PREFIX = "customAppApiConfigId:";
-type ExtendedAuxBindingField = AuxBindingField | `${typeof CUSTOM_APP_AUX_FIELD_PREFIX}${string}`;
-const getCustomAppIdFromAuxField = (field: ExtendedAuxBindingField): string | null => (
-    field.startsWith(CUSTOM_APP_AUX_FIELD_PREFIX) ? field.slice(CUSTOM_APP_AUX_FIELD_PREFIX.length) : null
-);
-
 const isCustomAppBindingId = (appId: string | null | undefined): boolean => (
     Boolean(appId?.startsWith(CUSTOM_APP_BINDING_PREFIX))
 );
@@ -131,9 +125,11 @@ export function BindingManager() {
     const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
     const [activeGlobalSheetField, setActiveGlobalSheetField] = useState<BindingField | null>(null);
     const [activeSlotSheetField, setActiveSlotSheetField] = useState<BindingField | null>(null);
-    const [activeAuxSheetField, setActiveAuxSheetField] = useState<ExtendedAuxBindingField | null>(null);
+    const [activeAuxSheetField, setActiveAuxSheetField] = useState<AuxBindingField | null>(null);
     const [showCharacterPicker, setShowCharacterPicker] = useState(false);
     const [customAppSectionOpen, setCustomAppSectionOpen] = useState(false);
+    const [activeCustomAppId, setActiveCustomAppId] = useState<string | null>(null);
+    const [extraPromptDraft, setExtraPromptDraft] = useState<string | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
     const reloadData = () => {
@@ -531,15 +527,8 @@ export function BindingManager() {
         );
     };
 
-    const renderAuxFieldIcon = (field: ExtendedAuxBindingField) => {
-        if (getCustomAppIdFromAuxField(field) !== null) {
-            return (
-                <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(BINDING_ACCENTS.api)}>
-                    <Code2 size={22} strokeWidth={1.8} />
-                </span>
-            );
-        }
-        const visual = AUX_FIELD_VISUALS[field as AuxBindingField];
+    const renderAuxFieldIcon = (field: AuxBindingField) => {
+        const visual = AUX_FIELD_VISUALS[field];
         const Icon = visual.icon;
         return (
             <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(visual.color)}>
@@ -548,30 +537,18 @@ export function BindingManager() {
         );
     };
 
-    const updateAuxField = (field: ExtendedAuxBindingField, value: string | undefined) => {
-        const customAppId = getCustomAppIdFromAuxField(field);
-        if (customAppId !== null) {
-            const customAppApiConfigs = { ...(config.customAppApiConfigs ?? {}) };
-            if (value) customAppApiConfigs[customAppId] = value;
-            else delete customAppApiConfigs[customAppId];
-            persist({ ...config, customAppApiConfigs });
-        } else {
-            persist({ ...config, [field as AuxBindingField]: value || undefined });
-        }
+    const updateAuxField = (field: AuxBindingField, value: string | undefined) => {
+        persist({ ...config, [field]: value || undefined });
     };
 
     const renderAuxSelect = (
-        field: ExtendedAuxBindingField,
+        field: AuxBindingField,
         label: string,
     ) => {
-        const customAppId = getCustomAppIdFromAuxField(field);
-        const isCustomApp = customAppId !== null;
-        const currentValue = isCustomApp
-            ? config.customAppApiConfigs?.[customAppId]
-            : config[field as AuxBindingField];
+        const currentValue = config[field];
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
         const selectedOption = options.find(o => o.id === currentValue);
-        const displayValue = selectedOption ? selectedOption.name : (isCustomApp ? "未设置" : "继承全局");
+        const displayValue = selectedOption ? selectedOption.name : "继承全局";
 
         return (
             <div key={field} className="binding-aux-select">
@@ -587,7 +564,7 @@ export function BindingManager() {
                     {renderAuxFieldIcon(field)}
                     <span className="binding-card-copy">
                         <span className="binding-choice-label">{label}</span>
-                        <span className="binding-choice-desc">{isCustomApp ? "该应用默认使用的 API，可在角色绑定里单独改" : getAuxFieldDescription(field as AuxBindingField)}</span>
+                        <span className="binding-choice-desc">{getAuxFieldDescription(field)}</span>
                     </span>
                     <span className="binding-choice-row">
                         <span className={selectedOption ? "binding-choice-value" : "binding-choice-value is-empty"}>{displayValue}</span>
@@ -873,6 +850,13 @@ export function BindingManager() {
         );
     };
 
+    const updateCustomAppApi = (customAppId: string, apiConfigId: string | undefined) => {
+        const customAppApiConfigs = { ...(config.customAppApiConfigs ?? {}) };
+        if (apiConfigId) customAppApiConfigs[customAppId] = apiConfigId;
+        else delete customAppApiConfigs[customAppId];
+        persist({ ...config, customAppApiConfigs });
+    };
+
     const toggleCustomAppExtraPrompt = (customAppId: string, enabled: boolean) => {
         const disabled = new Set(config.customAppExtraPromptDisabledIds ?? []);
         if (enabled) disabled.delete(customAppId);
@@ -880,83 +864,200 @@ export function BindingManager() {
         persist({ ...config, customAppExtraPromptDisabledIds: disabled.size > 0 ? Array.from(disabled) : undefined });
     };
 
-    // 自定义应用：每个应用的专属 API + 通用提示词开关，默认收起，免得设置页太长
+    const renderCustomAppCard = (options: {
+        key: string;
+        icon: ReactNode;
+        accent: string;
+        label: string;
+        desc: string;
+        value: string;
+        isEmpty?: boolean;
+        onClick: () => void;
+        chevronOpen?: boolean;
+    }) => (
+        <div key={options.key} className="binding-aux-select">
+            <button type="button" onClick={options.onClick} className="binding-aux-trigger" aria-haspopup={options.chevronOpen === undefined ? "dialog" : undefined} aria-expanded={options.chevronOpen}>
+                <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(options.accent)}>
+                    {options.icon}
+                </span>
+                <span className="binding-card-copy">
+                    <span className="binding-choice-label">{options.label}</span>
+                    <span className="binding-choice-desc">{options.desc}</span>
+                </span>
+                <span className="binding-choice-row">
+                    <span className={options.isEmpty ? "binding-choice-value is-empty" : "binding-choice-value"}>{options.value}</span>
+                    <ChevronRight
+                        size={15}
+                        strokeWidth={1.7}
+                        className="binding-choice-chevron"
+                        style={options.chevronOpen ? { transform: "rotate(90deg)", transition: "transform 0.2s" } : { transition: "transform 0.2s" }}
+                    />
+                </span>
+            </button>
+        </div>
+    );
+
+    // 自定义应用：通用提示词 + 每个应用的专属 API / 提示词开关。默认收起，免得设置页太长
     const renderCustomAppSection = () => {
+        const extraPrompt = config.customAppExtraPrompt?.trim() ?? "";
         const disabledIds = new Set(config.customAppExtraPromptDisabledIds ?? []);
         return (
             <section className="flex flex-col gap-3">
                 <p className="settings-menu-section-title">Custom Apps</p>
-                <div className="binding-aux-select">
-                    <button
-                        type="button"
-                        onClick={() => setCustomAppSectionOpen(open => !open)}
-                        className="binding-aux-trigger"
-                        aria-expanded={customAppSectionOpen}
-                    >
-                        <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle("#14b8a6")}>
-                            <LayoutGrid size={22} strokeWidth={1.8} />
-                        </span>
-                        <span className="binding-card-copy">
-                            <span className="binding-choice-label">自定义应用</span>
-                            <span className="binding-choice-desc">每个应用的专属 API 与通用提示词</span>
-                        </span>
-                        <span className="binding-choice-row">
-                            <span className="binding-choice-value">
-                                {customAppSectionOpen ? "收起" : `${customApps.length} 个应用`}
-                            </span>
-                            <ChevronRight
-                                size={15}
-                                strokeWidth={1.7}
-                                className="binding-choice-chevron"
-                                style={{ transform: customAppSectionOpen ? "rotate(90deg)" : undefined, transition: "transform 0.2s" }}
-                            />
-                        </span>
-                    </button>
+                <div className="flex flex-col gap-3">
+                    {renderCustomAppCard({
+                        key: "toggle",
+                        icon: <LayoutGrid size={22} strokeWidth={1.8} />,
+                        accent: "#14b8a6",
+                        label: "自定义应用",
+                        desc: "专属 API 与通用提示词",
+                        value: customAppSectionOpen ? "收起" : `${customApps.length} 个应用`,
+                        onClick: () => setCustomAppSectionOpen(open => !open),
+                        chevronOpen: customAppSectionOpen,
+                    })}
+                    {customAppSectionOpen && (
+                        <>
+                            {renderCustomAppCard({
+                                key: "extra-prompt",
+                                icon: <Sparkles size={21} strokeWidth={1.8} />,
+                                accent: BINDING_ACCENTS.preset,
+                                label: "通用提示词",
+                                desc: extraPrompt ? extraPrompt.replace(/\s+/g, " ") : "如破限，开启的应用每次请求都带上",
+                                value: extraPrompt ? "已填写" : "未填写",
+                                isEmpty: !extraPrompt,
+                                onClick: () => setExtraPromptDraft(config.customAppExtraPrompt ?? ""),
+                            })}
+                            {customApps.map(app => {
+                                const apiName = apiConfigs.find(c => c.id === config.customAppApiConfigs?.[app.id]);
+                                const promptOn = !disabledIds.has(app.id);
+                                return renderCustomAppCard({
+                                    key: app.id,
+                                    icon: app.iconDataUrl
+                                        ? <img src={app.iconDataUrl} alt="" className="h-full w-full rounded-full object-cover" />
+                                        : <IconGlyph id={"appmarket" as IconId} className="binding-app-icon-glyph" />,
+                                    accent: "#14b8a6",
+                                    label: app.name,
+                                    desc: `通用提示词：${promptOn ? "带上" : "不带"}`,
+                                    value: apiName ? (apiName.name || apiName.provider) : "未设置 API",
+                                    isEmpty: !apiName,
+                                    onClick: () => {
+                                        reloadData();
+                                        setActiveCustomAppId(app.id);
+                                    },
+                                });
+                            })}
+                        </>
+                    )}
                 </div>
-                {customAppSectionOpen && (
-                    <div className="flex flex-col gap-3">
-                        <div className="flex flex-col gap-2">
-                            <label className="menu-label ts-13 font-semibold ml-1">通用提示词（如破限）</label>
-                            <span className="menu-desc ml-1">打开开关的应用，每次请求 AI 都会把这段放在最前面。留空则不生效。</span>
-                            <textarea
-                                value={config.customAppExtraPrompt ?? ""}
-                                onChange={(event) => persist({ ...config, customAppExtraPrompt: event.target.value || undefined })}
-                                placeholder="在这里填写要发给所有自定义应用的提示词…"
-                                rows={5}
-                                className="ui-textarea resize-y"
-                            />
-                        </div>
-                        {customApps.map(app => (
-                            <div key={app.id} className="flex flex-col gap-2">
-                                {renderAuxSelect(`${CUSTOM_APP_AUX_FIELD_PREFIX}${app.id}`, `${app.name} 专属 API`)}
-                                <div className="flex items-center justify-between gap-3 px-3">
-                                    <span className="menu-desc">{app.name} 带上通用提示词</span>
-                                    <Toggle
-                                        checked={!disabledIds.has(app.id)}
-                                        onChange={(next) => toggleCustomAppExtraPrompt(app.id, next)}
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
             </section>
+        );
+    };
+
+    const renderCustomAppDialog = () => {
+        if (!activeCustomAppId) return null;
+        const app = customApps.find(item => item.id === activeCustomAppId);
+        if (!app) return null;
+        const selectedValue = config.customAppApiConfigs?.[app.id];
+        const promptOn = !(config.customAppExtraPromptDisabledIds ?? []).includes(app.id);
+        const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
+        const close = () => setActiveCustomAppId(null);
+        return (
+            <div className="modal-overlay" data-ui="modal" onClick={close}>
+                <div className="binding-picker-dialog" role="dialog" aria-modal="true" aria-label={`${app.name} 设置`} onClick={(event) => event.stopPropagation()}>
+                    <div className="binding-picker-header">
+                        <button type="button" className="binding-picker-icon-btn" onClick={close} aria-label="关闭">
+                            <X size={17} />
+                        </button>
+                        <h3 className="binding-picker-title">{app.name}</h3>
+                        <span className="binding-picker-header-spacer" />
+                    </div>
+                    <div className="binding-picker-body">
+                        <div className="binding-sheet-list">
+                            <div className="binding-sheet-option" style={{ cursor: "default" }}>
+                                <span className="binding-sheet-option-text">带上通用提示词</span>
+                                <Toggle checked={promptOn} onChange={(next) => toggleCustomAppExtraPrompt(app.id, next)} />
+                            </div>
+                            <p className="binding-sheet-section-title">专属 API</p>
+                            <button
+                                type="button"
+                                className="binding-sheet-option"
+                                data-selected={!selectedValue}
+                                onClick={() => updateCustomAppApi(app.id, undefined)}
+                            >
+                                <span className="binding-sheet-check">{!selectedValue && <Check size={15} />}</span>
+                                <span className="binding-sheet-option-text">未设置（照常继承）</span>
+                            </button>
+                            {options.length === 0 ? (
+                                <div className="binding-sheet-empty">暂无可选 API 配置，请先在 API 设置页面创建。</div>
+                            ) : (
+                                options.map(option => {
+                                    const selected = selectedValue === option.id;
+                                    return (
+                                        <button
+                                            key={option.id}
+                                            type="button"
+                                            className="binding-sheet-option"
+                                            data-selected={selected}
+                                            aria-pressed={selected}
+                                            onClick={() => updateCustomAppApi(app.id, option.id)}
+                                        >
+                                            <span className="binding-sheet-check">{selected && <Check size={15} />}</span>
+                                            <span className="binding-sheet-option-text">{option.name}</span>
+                                        </button>
+                                    );
+                                })
+                            )}
+                            <p className="binding-sheet-hint">角色下的这个应用默认跟随专属 API，也可以在角色绑定里单独改。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const renderExtraPromptDialog = () => {
+        if (extraPromptDraft === null) return null;
+        const close = () => setExtraPromptDraft(null);
+        const save = () => {
+            persist({ ...config, customAppExtraPrompt: extraPromptDraft.trim() ? extraPromptDraft : undefined });
+            close();
+        };
+        return (
+            <div className="modal-overlay" data-ui="modal" onClick={close}>
+                <div className="binding-picker-dialog binding-picker-dialog-wide" role="dialog" aria-modal="true" aria-label="通用提示词" onClick={(event) => event.stopPropagation()}>
+                    <div className="binding-picker-header">
+                        <button type="button" className="binding-picker-icon-btn" onClick={close} aria-label="取消">
+                            <X size={17} />
+                        </button>
+                        <h3 className="binding-picker-title">通用提示词</h3>
+                        <button type="button" className="binding-picker-done-btn" onClick={save}>
+                            完成
+                        </button>
+                    </div>
+                    <div className="binding-picker-body">
+                        <div className="binding-sheet-list">
+                            <textarea
+                                value={extraPromptDraft}
+                                onChange={(event) => setExtraPromptDraft(event.target.value)}
+                                placeholder="例如破限提示词…"
+                                rows={9}
+                                className="ui-textarea binding-prompt-textarea"
+                                autoFocus
+                            />
+                            <p className="binding-sheet-hint">开启的自定义应用每次请求 AI 都会把这段放在最前面；留空则不生效。每个应用可以在它自己的卡片里单独关掉。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         );
     };
 
     const renderAuxPickerDialog = () => {
         if (!activeAuxSheetField) return null;
         const field = activeAuxSheetField;
-        const customAppId = getCustomAppIdFromAuxField(field);
-        const customApp = customAppId !== null ? customApps.find(app => app.id === customAppId) : undefined;
-        const label = customAppId !== null
-            ? `${customApp?.name ?? "应用"} 专属 API`
-            : getAuxFieldLabel(field as AuxBindingField);
-        const selectedValue = customAppId !== null
-            ? config.customAppApiConfigs?.[customAppId]
-            : config[field as AuxBindingField];
-        const emptyLabel = customAppId !== null ? "未设置" : "继承全局";
+        const label = getAuxFieldLabel(field);
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
+        const selectedValue = config[field];
 
         return (
             <div className="modal-overlay" data-ui="modal" onClick={() => setActiveAuxSheetField(null)}>
@@ -991,7 +1092,7 @@ export function BindingManager() {
                                 }}
                             >
                                 <span className="binding-sheet-check">{!selectedValue && <Check size={15} />}</span>
-                                <span className="binding-sheet-option-text">{emptyLabel}</span>
+                                <span className="binding-sheet-option-text">继承全局</span>
                             </button>
                             {options.length === 0 ? (
                                 <div className="binding-sheet-empty">暂无可选 API 配置，请先在 API 设置页面创建。</div>
@@ -1107,6 +1208,8 @@ export function BindingManager() {
             {renderGlobalPickerSheet()}
             {renderSlotPickerDialog()}
             {renderAuxPickerDialog()}
+            {renderCustomAppDialog()}
+            {renderExtraPromptDialog()}
             {renderCharacterPickerDialog()}
 
             {/* Level 2: Character binding details */}
