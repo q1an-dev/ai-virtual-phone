@@ -129,8 +129,6 @@ export function BindingManager() {
     const [showCharacterPicker, setShowCharacterPicker] = useState(false);
     const [customAppSectionOpen, setCustomAppSectionOpen] = useState(false);
     const [activeCustomAppId, setActiveCustomAppId] = useState<string | null>(null);
-    const [builtinAppSectionOpen, setBuiltinAppSectionOpen] = useState(false);
-    const [activeBuiltinAppId, setActiveBuiltinAppId] = useState<string | null>(null);
     const [extraPromptDraft, setExtraPromptDraft] = useState<string | null>(null);
     const [isLoaded, setIsLoaded] = useState(false);
 
@@ -354,8 +352,6 @@ export function BindingManager() {
     const getAppSpecificSlot = (appId: string): BindingSlot => {
         const binding = getCharacterBinding(config, selectedCharId);
         const slot = mergeSlotInto({}, config.appDefaults?.[appId]);
-        // 应用的全局 API 是所有角色共用的，不算这个角色的单独设置（否则每个角色都会显示角标）
-        delete slot.apiConfigId;
         return mergeSlotInto(slot, binding.appOverrides[appId]);
     };
 
@@ -861,104 +857,6 @@ export function BindingManager() {
         persist({ ...config, customAppApiConfigs });
     };
 
-    // 本机应用的全局 API 存在 appDefaults[应用].apiConfigId，所有角色共用；角色里单独设的优先
-    const updateBuiltinAppApi = (appId: string, apiConfigId: string | undefined) => {
-        const appDefaults = { ...(config.appDefaults ?? {}) };
-        const slot: BindingSlot = { ...(appDefaults[appId] ?? {}) };
-        if (apiConfigId) slot.apiConfigId = apiConfigId;
-        else delete slot.apiConfigId;
-        if (Object.values(slot).some(value => value !== undefined)) appDefaults[appId] = slot;
-        else delete appDefaults[appId];
-        persist({ ...config, appDefaults });
-    };
-
-    const renderBuiltinAppSection = () => {
-        const builtinApps = appOverrideEntries.filter(app => !isCustomAppBindingId(app.id));
-        if (builtinApps.length === 0) return null;
-        const configuredCount = builtinApps.filter(app => config.appDefaults?.[app.id]?.apiConfigId).length;
-        return (
-            <section className="flex flex-col gap-3">
-                <p className="settings-menu-section-title">App APIs</p>
-                <div className="flex flex-col gap-3">
-                    {renderCustomAppCard({
-                        key: "builtin-app-list",
-                        icon: <Layers size={21} strokeWidth={1.8} />,
-                        accent: BINDING_ACCENTS.api,
-                        label: "本机应用列表",
-                        desc: "每个本机应用所有角色共用的 API",
-                        value: builtinAppSectionOpen ? "收起" : (configuredCount > 0 ? `已设 ${configuredCount} 个` : `${builtinApps.length} 个应用`),
-                        onClick: () => setBuiltinAppSectionOpen(open => !open),
-                        chevronOpen: builtinAppSectionOpen,
-                    })}
-                    {builtinAppSectionOpen && builtinApps.map(app => {
-                        const api = apiConfigs.find(c => c.id === config.appDefaults?.[app.id]?.apiConfigId);
-                        return renderCustomAppCard({
-                            key: app.id,
-                            icon: <IconGlyph id={app.iconId} className="binding-app-icon-glyph" />,
-                            accent: app.color,
-                            label: app.label,
-                            desc: "所有角色默认用这个，角色里可单独改",
-                            value: api ? (api.name || api.provider) : "跟随全局",
-                            isEmpty: !api,
-                            onClick: () => {
-                                reloadData();
-                                setActiveBuiltinAppId(app.id);
-                            },
-                        });
-                    })}
-                </div>
-            </section>
-        );
-    };
-
-    const renderBuiltinAppDialog = () => {
-        if (!activeBuiltinAppId) return null;
-        const app = appOverrideEntries.find(item => item.id === activeBuiltinAppId);
-        if (!app) return null;
-        const selectedValue = config.appDefaults?.[app.id]?.apiConfigId;
-        const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
-        const close = () => setActiveBuiltinAppId(null);
-        const pick = (id: string | undefined) => {
-            updateBuiltinAppApi(app.id, id);
-            close();
-        };
-        return (
-            <div className="modal-overlay" data-ui="modal" onClick={close}>
-                <div className="binding-picker-dialog" role="dialog" aria-modal="true" aria-label={`选择${app.label} API`} onClick={(event) => event.stopPropagation()}>
-                    <div className="binding-picker-header">
-                        <button type="button" className="binding-picker-icon-btn" onClick={close} aria-label="关闭">
-                            <X size={17} />
-                        </button>
-                        <h3 className="binding-picker-title">{app.label} API</h3>
-                        <span className="binding-picker-header-spacer" />
-                    </div>
-                    <div className="binding-picker-body">
-                        <div className="binding-sheet-list">
-                            <button type="button" className="binding-sheet-option" data-selected={!selectedValue} onClick={() => pick(undefined)}>
-                                <span className="binding-sheet-check">{!selectedValue && <Check size={15} />}</span>
-                                <span className="binding-sheet-option-text">跟随全局</span>
-                            </button>
-                            {options.length === 0 ? (
-                                <div className="binding-sheet-empty">暂无可选 API 配置，请先在 API 设置页面创建。</div>
-                            ) : (
-                                options.map(option => {
-                                    const selected = selectedValue === option.id;
-                                    return (
-                                        <button key={option.id} type="button" className="binding-sheet-option" data-selected={selected} aria-pressed={selected} onClick={() => pick(option.id)}>
-                                            <span className="binding-sheet-check">{selected && <Check size={15} />}</span>
-                                            <span className="binding-sheet-option-text">{option.name}</span>
-                                        </button>
-                                    );
-                                })
-                            )}
-                            <p className="binding-sheet-hint">所有角色用{app.label}时默认用这个 API；角色里单独设的优先。只改 API，不影响预设、世界书和正则。</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     const toggleCustomAppExtraPrompt = (customAppId: string, enabled: boolean) => {
         const disabled = new Set(config.customAppExtraPromptDisabledIds ?? []);
         if (enabled) disabled.delete(customAppId);
@@ -1300,8 +1198,6 @@ export function BindingManager() {
                         </div>
                     </section>
 
-                    {renderBuiltinAppSection()}
-
                     {customApps.length > 0 && renderCustomAppSection()}
                 </>
             )}
@@ -1309,7 +1205,6 @@ export function BindingManager() {
             {renderSlotPickerDialog()}
             {renderAuxPickerDialog()}
             {renderCustomAppDialog()}
-            {renderBuiltinAppDialog()}
             {renderExtraPromptDialog()}
             {renderCharacterPickerDialog()}
 
