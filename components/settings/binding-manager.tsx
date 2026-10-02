@@ -57,6 +57,7 @@ import {
     loadRegexes,
     loadUserIdentities,
     ensureSettingsStorageHydrated,
+    getCustomAppExclusiveApiConfigId,
 } from "@/lib/settings-storage";
 import { hydrateKvDb } from "@/lib/kv-db";
 import type { UserIdentity } from "@/components/settings/user-identity";
@@ -95,6 +96,13 @@ const bindingAccentStyle = (color: string): CSSProperties => ({
 
 const CUSTOM_APP_BINDING_PREFIX = "custom_app:";
 
+/** 「辅助 API」里每个自定义应用的专属 API 选项，形如 customAppApiConfigId:<应用 id> */
+const CUSTOM_APP_AUX_FIELD_PREFIX = "customAppApiConfigId:";
+type ExtendedAuxBindingField = AuxBindingField | `${typeof CUSTOM_APP_AUX_FIELD_PREFIX}${string}`;
+const getCustomAppIdFromAuxField = (field: ExtendedAuxBindingField): string | null => (
+    field.startsWith(CUSTOM_APP_AUX_FIELD_PREFIX) ? field.slice(CUSTOM_APP_AUX_FIELD_PREFIX.length) : null
+);
+
 const isCustomAppBindingId = (appId: string | null | undefined): boolean => (
     Boolean(appId?.startsWith(CUSTOM_APP_BINDING_PREFIX))
 );
@@ -121,7 +129,7 @@ export function BindingManager() {
     const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
     const [activeGlobalSheetField, setActiveGlobalSheetField] = useState<BindingField | null>(null);
     const [activeSlotSheetField, setActiveSlotSheetField] = useState<BindingField | null>(null);
-    const [activeAuxSheetField, setActiveAuxSheetField] = useState<AuxBindingField | null>(null);
+    const [activeAuxSheetField, setActiveAuxSheetField] = useState<ExtendedAuxBindingField | null>(null);
     const [showCharacterPicker, setShowCharacterPicker] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
 
@@ -335,6 +343,9 @@ export function BindingManager() {
         mergeSlotInto(inherited, binding.defaults);
         if (level === "app" && selectedAppId) {
             mergeSlotInto(inherited, config.appDefaults?.[selectedAppId]);
+            // 自定义应用配了专属 API 时，角色下的该应用默认跟随专属 API，而不是全局/角色默认 API
+            const exclusiveApiId = getCustomAppExclusiveApiConfigId(config, selectedAppId);
+            if (exclusiveApiId) inherited.apiConfigId = exclusiveApiId;
         }
         return inherited;
     };
@@ -517,8 +528,15 @@ export function BindingManager() {
         );
     };
 
-    const renderAuxFieldIcon = (field: AuxBindingField) => {
-        const visual = AUX_FIELD_VISUALS[field];
+    const renderAuxFieldIcon = (field: ExtendedAuxBindingField) => {
+        if (getCustomAppIdFromAuxField(field) !== null) {
+            return (
+                <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(BINDING_ACCENTS.api)}>
+                    <Code2 size={22} strokeWidth={1.8} />
+                </span>
+            );
+        }
+        const visual = AUX_FIELD_VISUALS[field as AuxBindingField];
         const Icon = visual.icon;
         return (
             <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle(visual.color)}>
@@ -527,18 +545,30 @@ export function BindingManager() {
         );
     };
 
-    const updateAuxField = (field: AuxBindingField, value: string | undefined) => {
-        persist({ ...config, [field]: value || undefined });
+    const updateAuxField = (field: ExtendedAuxBindingField, value: string | undefined) => {
+        const customAppId = getCustomAppIdFromAuxField(field);
+        if (customAppId !== null) {
+            const customAppApiConfigs = { ...(config.customAppApiConfigs ?? {}) };
+            if (value) customAppApiConfigs[customAppId] = value;
+            else delete customAppApiConfigs[customAppId];
+            persist({ ...config, customAppApiConfigs });
+        } else {
+            persist({ ...config, [field as AuxBindingField]: value || undefined });
+        }
     };
 
     const renderAuxSelect = (
-        field: AuxBindingField,
+        field: ExtendedAuxBindingField,
         label: string,
     ) => {
-        const currentValue = config[field];
+        const customAppId = getCustomAppIdFromAuxField(field);
+        const isCustomApp = customAppId !== null;
+        const currentValue = isCustomApp
+            ? config.customAppApiConfigs?.[customAppId]
+            : config[field as AuxBindingField];
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
         const selectedOption = options.find(o => o.id === currentValue);
-        const displayValue = selectedOption ? selectedOption.name : "继承全局";
+        const displayValue = selectedOption ? selectedOption.name : (isCustomApp ? "未设置" : "继承全局");
 
         return (
             <div key={field} className="binding-aux-select">
@@ -554,7 +584,7 @@ export function BindingManager() {
                     {renderAuxFieldIcon(field)}
                     <span className="binding-card-copy">
                         <span className="binding-choice-label">{label}</span>
-                        <span className="binding-choice-desc">{getAuxFieldDescription(field)}</span>
+                        <span className="binding-choice-desc">{isCustomApp ? "该应用默认使用的 API，可在角色绑定里单独改" : getAuxFieldDescription(field as AuxBindingField)}</span>
                     </span>
                     <span className="binding-choice-row">
                         <span className={selectedOption ? "binding-choice-value" : "binding-choice-value is-empty"}>{displayValue}</span>
@@ -843,9 +873,16 @@ export function BindingManager() {
     const renderAuxPickerDialog = () => {
         if (!activeAuxSheetField) return null;
         const field = activeAuxSheetField;
-        const label = getAuxFieldLabel(field);
+        const customAppId = getCustomAppIdFromAuxField(field);
+        const customApp = customAppId !== null ? customApps.find(app => app.id === customAppId) : undefined;
+        const label = customAppId !== null
+            ? `${customApp?.name ?? "应用"} 专属 API`
+            : getAuxFieldLabel(field as AuxBindingField);
+        const selectedValue = customAppId !== null
+            ? config.customAppApiConfigs?.[customAppId]
+            : config[field as AuxBindingField];
+        const emptyLabel = customAppId !== null ? "未设置" : "继承全局";
         const options = apiConfigs.map(c => ({ id: c.id, name: c.name || c.provider }));
-        const selectedValue = config[field];
 
         return (
             <div className="modal-overlay" data-ui="modal" onClick={() => setActiveAuxSheetField(null)}>
@@ -880,7 +917,7 @@ export function BindingManager() {
                                 }}
                             >
                                 <span className="binding-sheet-check">{!selectedValue && <Check size={15} />}</span>
-                                <span className="binding-sheet-option-text">继承全局</span>
+                                <span className="binding-sheet-option-text">{emptyLabel}</span>
                             </button>
                             {options.length === 0 ? (
                                 <div className="binding-sheet-empty">暂无可选 API 配置，请先在 API 设置页面创建。</div>
@@ -987,6 +1024,8 @@ export function BindingManager() {
                             {renderAuxSelect("mascotApiConfigId", "小卷助手 API")}
                             {renderAuxSelect("qaApiConfigId", "工坊 API")}
                             {renderAuxSelect("reasoningTranslateApiConfigId", "思维链翻译 API")}
+                            {customApps.length > 0 && <div className="h-[1px] bg-gray-200/50 dark:bg-gray-800/50 my-2" />}
+                            {customApps.map(app => renderAuxSelect(`${CUSTOM_APP_AUX_FIELD_PREFIX}${app.id}`, `${app.name} 专属 API`))}
                         </div>
                     </section>
                 </>

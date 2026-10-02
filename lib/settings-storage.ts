@@ -981,6 +981,14 @@ export function removeApiConfigReferences(apiConfigId: string): void {
             changed = true;
         }
     }
+    if (config.customAppApiConfigs) {
+        const customAppApiConfigs: Record<string, string> = {};
+        for (const [customAppId, id] of Object.entries(config.customAppApiConfigs)) {
+            if (id === apiConfigId) changed = true;
+            else customAppApiConfigs[customAppId] = id;
+        }
+        next.customAppApiConfigs = customAppApiConfigs;
+    }
     if (changed) saveBindingConfig(next);
 }
 
@@ -1031,7 +1039,14 @@ export function resolveBinding(
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
     };
 
-    if (!characterId) return resolved;
+    // 自定义应用若在「辅助 API」里配了专属 API，API 走独立的一条线：
+    // 角色为该应用单独选的 API → 该应用的专属 API，不再继承全局默认/角色默认 API。
+    const customAppApiId = getCustomAppExclusiveApiConfigId(config, appId);
+
+    if (!characterId) {
+        if (customAppApiId) resolved.apiConfigId = customAppApiId;
+        return resolved;
+    }
 
     // Apply character defaults
     const charBinding = config.characterBindings.find(b => b.characterId === characterId);
@@ -1043,11 +1058,20 @@ export function resolveBinding(
         applySlot(config.appDefaults[appId]!);
     }
 
+    if (customAppApiId) resolved.apiConfigId = customAppApiId;
+
     if (appId && charBinding?.appOverrides[appId]) {
         applySlot(charBinding.appOverrides[appId]!);
     }
 
     return resolved;
+}
+
+/** 自定义应用（appId 形如 custom_app:xxx）在设置里配的专属 API；没配返回 undefined。 */
+export function getCustomAppExclusiveApiConfigId(config: BindingConfig, appId?: string): string | undefined {
+    if (!appId?.startsWith("custom_app:")) return undefined;
+    const customAppId = appId.slice("custom_app:".length);
+    return config.customAppApiConfigs?.[customAppId] || undefined;
 }
 
 /**

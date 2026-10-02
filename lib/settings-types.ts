@@ -318,6 +318,8 @@ export type BindingConfig = {
     qaApiConfigId?: string;
     /** Auxiliary API: used to translate reasoning/chain-of-thought text (global, not per-character) */
     reasoningTranslateApiConfigId?: string;
+    /** Custom App specific API: map of customAppId to apiConfigId (global, not per-character) */
+    customAppApiConfigs?: Record<string, string>;
 };
 
 // --- Chat Toolbox ---

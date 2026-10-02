@@ -55,6 +55,7 @@ import {
   loadVoiceConfigs,
   loadWorldBooks,
   resolveAuxiliaryApiConfig,
+  getCustomAppExclusiveApiConfigId,
   resolveBinding,
   resolveUserIdentity,
   ensureSettingsStorageHydrated,
@@ -274,14 +275,17 @@ function resolveCustomAppApiConfig(app: InstalledCustomApp, record: Record<strin
   const apiConfigs = loadApiConfigs();
   const explicitId = cleanText(record.apiConfigId ?? record.configId, 160);
   if (explicitId) return apiConfigs.find(config => config.id === explicitId) ?? null;
-  const characterId = cleanText(record.characterId, 160);
   const bindings = loadBindingConfig();
+  const appBindingId = `custom_app:${app.id}`;
+  const characterId = cleanText(record.characterId, 160);
+  // 该应用配了专属 API 时，resolveBinding 只会给出「角色为该应用单独选的 API」或「应用专属 API」，
+  // 与全局默认/角色默认 API 互不干扰；没配时保持原来的继承顺序。
+  const appSlot = resolveBinding(bindings, characterId || undefined, appBindingId);
+  if (appSlot.apiConfigId) {
+    const found = apiConfigs.find(config => config.id === appSlot.apiConfigId);
+    if (found) return found;
+  }
   if (characterId) {
-    const appSlot = resolveBinding(bindings, characterId, `custom_app:${app.id}`);
-    if (appSlot.apiConfigId) {
-      const found = apiConfigs.find(config => config.id === appSlot.apiConfigId);
-      if (found) return found;
-    }
     const chatSlot = resolveBinding(bindings, characterId, "chat");
     if (chatSlot.apiConfigId) {
       const found = apiConfigs.find(config => config.id === chatSlot.apiConfigId);
@@ -2084,7 +2088,8 @@ export async function generateCustomAppGroupText(app: InstalledCustomApp, record
   const completion = await generateGroupRawCompletion(session, history, {
     appTags,
     promptProfile: profile ?? undefined,
-    apiConfigId: cleanText(record.apiConfigId ?? record.configId, 160) || undefined,
+    apiConfigId: cleanText(record.apiConfigId ?? record.configId, 160)
+      || getCustomAppExclusiveApiConfigId(loadBindingConfig(), `custom_app:${app.id}`),
     appId: `custom_app:${app.id}`,
   });
   const text = cleanUnboundedText(completion.text);
