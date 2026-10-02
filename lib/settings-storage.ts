@@ -1067,6 +1067,19 @@ export function resolveBinding(
     return resolved;
 }
 
+/**
+ * 自定义应用通用提示词：appId 形如 custom_app:xxx，或直接传应用 id。
+ * 没填、或该应用被关掉时返回 undefined。
+ */
+export function getCustomAppExtraPrompt(appId: string | undefined, config: BindingConfig = loadBindingConfig()): string | undefined {
+    if (!appId) return undefined;
+    const customAppId = appId.startsWith("custom_app:") ? appId.slice("custom_app:".length) : appId;
+    const prompt = config.customAppExtraPrompt?.trim();
+    if (!prompt || !customAppId) return undefined;
+    if (config.customAppExtraPromptDisabledIds?.includes(customAppId)) return undefined;
+    return prompt;
+}
+
 /** 自定义应用（appId 形如 custom_app:xxx）在设置里配的专属 API；没配返回 undefined。 */
 export function getCustomAppExclusiveApiConfigId(config: BindingConfig, appId?: string): string | undefined {
     if (!appId?.startsWith("custom_app:")) return undefined;

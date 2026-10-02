@@ -28,6 +28,7 @@ import type { CustomAppPromptProfile } from "./custom-app-types";
 import {
     resolveBinding,
     loadBindingConfig,
+    getCustomAppExtraPrompt,
     loadApiConfigs,
     loadPresets,
     loadWorldBooks,
@@ -1948,6 +1949,9 @@ export async function buildChatPromptMessages(
             content: "本次自定义 APP AI 任务只输出严格 JSON。不要输出 Markdown 代码块、解释文字或聊天富媒体指令。",
         });
     }
+    // 自定义应用通用提示词（如破限）放在最前面，不受预设筛选和世界书标签影响
+    const customAppExtraPrompt = resolvedAppId.startsWith("custom_app:") ? getCustomAppExtraPrompt(resolvedAppId, bindings) : undefined;
+    if (customAppExtraPrompt) llmMessages.unshift({ role: "system", content: customAppExtraPrompt });
     appendEmptyGenerateGuardMessage(llmMessages, config, historyForPrompt);
 
     return { llmMessages, character, config, preset, regexes, userIdentity, toolsEnabled };

@@ -44,6 +44,7 @@ import { buildCalendarScheduleMarker, getCurrentCalendarScheduleForPrompt } from
 import { getWeekStartIso } from "./calendar-utils";
 import {
     resolveBinding,
+    getCustomAppExtraPrompt,
     loadBindingConfig,
     loadApiConfigs,
     loadPresets,
@@ -1109,6 +1110,9 @@ export async function generateGroupRawCompletion(
             apiConfigId: options?.apiConfigId,
         },
     );
+    // 自定义应用通用提示词（如破限）放在最前面
+    const customAppExtraPrompt = options?.appId?.startsWith("custom_app:") ? getCustomAppExtraPrompt(options.appId) : undefined;
+    if (customAppExtraPrompt) llmMessages.unshift({ role: "system", content: customAppExtraPrompt });
     const rawOutput = await sendLLMRequest(config, preset, llmMessages, regexes, {
         characterName: `群聊:${session.groupName || "群聊"}`,
     }, {

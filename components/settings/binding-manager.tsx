@@ -9,6 +9,7 @@ import {
     Check,
     ChevronRight,
     Code2,
+    LayoutGrid,
     Languages,
     Layers,
     Mic,
@@ -60,6 +61,7 @@ import {
     getCustomAppExclusiveApiConfigId,
 } from "@/lib/settings-storage";
 import { hydrateKvDb } from "@/lib/kv-db";
+import { Toggle } from "@/components/ui/form";
 import type { UserIdentity } from "@/components/settings/user-identity";
 import { loadCharacters } from "@/lib/character-storage";
 import type { Character } from "@/lib/character-types";
@@ -131,6 +133,7 @@ export function BindingManager() {
     const [activeSlotSheetField, setActiveSlotSheetField] = useState<BindingField | null>(null);
     const [activeAuxSheetField, setActiveAuxSheetField] = useState<ExtendedAuxBindingField | null>(null);
     const [showCharacterPicker, setShowCharacterPicker] = useState(false);
+    const [customAppSectionOpen, setCustomAppSectionOpen] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
 
     const reloadData = () => {
@@ -870,6 +873,77 @@ export function BindingManager() {
         );
     };
 
+    const toggleCustomAppExtraPrompt = (customAppId: string, enabled: boolean) => {
+        const disabled = new Set(config.customAppExtraPromptDisabledIds ?? []);
+        if (enabled) disabled.delete(customAppId);
+        else disabled.add(customAppId);
+        persist({ ...config, customAppExtraPromptDisabledIds: disabled.size > 0 ? Array.from(disabled) : undefined });
+    };
+
+    // 自定义应用：每个应用的专属 API + 通用提示词开关，默认收起，免得设置页太长
+    const renderCustomAppSection = () => {
+        const disabledIds = new Set(config.customAppExtraPromptDisabledIds ?? []);
+        return (
+            <section className="flex flex-col gap-3">
+                <p className="settings-menu-section-title">Custom Apps</p>
+                <div className="binding-aux-select">
+                    <button
+                        type="button"
+                        onClick={() => setCustomAppSectionOpen(open => !open)}
+                        className="binding-aux-trigger"
+                        aria-expanded={customAppSectionOpen}
+                    >
+                        <span className="binding-choice-icon binding-choice-icon-inline" style={bindingAccentStyle("#14b8a6")}>
+                            <LayoutGrid size={22} strokeWidth={1.8} />
+                        </span>
+                        <span className="binding-card-copy">
+                            <span className="binding-choice-label">自定义应用</span>
+                            <span className="binding-choice-desc">每个应用的专属 API 与通用提示词</span>
+                        </span>
+                        <span className="binding-choice-row">
+                            <span className="binding-choice-value">
+                                {customAppSectionOpen ? "收起" : `${customApps.length} 个应用`}
+                            </span>
+                            <ChevronRight
+                                size={15}
+                                strokeWidth={1.7}
+                                className="binding-choice-chevron"
+                                style={{ transform: customAppSectionOpen ? "rotate(90deg)" : undefined, transition: "transform 0.2s" }}
+                            />
+                        </span>
+                    </button>
+                </div>
+                {customAppSectionOpen && (
+                    <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2">
+                            <label className="menu-label ts-13 font-semibold ml-1">通用提示词（如破限）</label>
+                            <span className="menu-desc ml-1">打开开关的应用，每次请求 AI 都会把这段放在最前面。留空则不生效。</span>
+                            <textarea
+                                value={config.customAppExtraPrompt ?? ""}
+                                onChange={(event) => persist({ ...config, customAppExtraPrompt: event.target.value || undefined })}
+                                placeholder="在这里填写要发给所有自定义应用的提示词…"
+                                rows={5}
+                                className="ui-textarea resize-y"
+                            />
+                        </div>
+                        {customApps.map(app => (
+                            <div key={app.id} className="flex flex-col gap-2">
+                                {renderAuxSelect(`${CUSTOM_APP_AUX_FIELD_PREFIX}${app.id}`, `${app.name} 专属 API`)}
+                                <div className="flex items-center justify-between gap-3 px-3">
+                                    <span className="menu-desc">{app.name} 带上通用提示词</span>
+                                    <Toggle
+                                        checked={!disabledIds.has(app.id)}
+                                        onChange={(next) => toggleCustomAppExtraPrompt(app.id, next)}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </section>
+        );
+    };
+
     const renderAuxPickerDialog = () => {
         if (!activeAuxSheetField) return null;
         const field = activeAuxSheetField;
@@ -1024,10 +1098,10 @@ export function BindingManager() {
                             {renderAuxSelect("mascotApiConfigId", "小卷助手 API")}
                             {renderAuxSelect("qaApiConfigId", "工坊 API")}
                             {renderAuxSelect("reasoningTranslateApiConfigId", "思维链翻译 API")}
-                            {customApps.length > 0 && <div className="h-[1px] bg-gray-200/50 dark:bg-gray-800/50 my-2" />}
-                            {customApps.map(app => renderAuxSelect(`${CUSTOM_APP_AUX_FIELD_PREFIX}${app.id}`, `${app.name} 专属 API`))}
                         </div>
                     </section>
+
+                    {customApps.length > 0 && renderCustomAppSection()}
                 </>
             )}
             {renderGlobalPickerSheet()}

@@ -56,6 +56,7 @@ import {
   loadWorldBooks,
   resolveAuxiliaryApiConfig,
   getCustomAppExclusiveApiConfigId,
+  getCustomAppExtraPrompt,
   resolveBinding,
   resolveUserIdentity,
   ensureSettingsStorageHydrated,
@@ -1312,7 +1313,11 @@ export async function saveCustomAppMedia(record: Record<string, unknown>): Promi
   };
 }
 
-export async function runCustomAppAiChat(app: InstalledCustomApp, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function runCustomAppAiChat(
+  app: InstalledCustomApp,
+  record: Record<string, unknown>,
+  options: { skipExtraPrompt?: boolean } = {},
+): Promise<Record<string, unknown>> {
   const config = resolveCustomAppApiConfig(app, record);
   if (!config) throw new Error("未找到可用 API 配置。");
   const rawMessages = Array.isArray(record.messages) ? record.messages : [];
@@ -1329,6 +1334,9 @@ export async function runCustomAppAiChat(app: InstalledCustomApp, record: Record
       String(record.system ?? "").trim() ? { role: "system", content: String(record.system ?? "") } : null,
       { role: "user", content: String(record.prompt ?? record.input ?? record.content ?? "").trim() || "请继续。" },
     ].filter(Boolean) as { role: string; content: string }[];
+  // 自定义应用通用提示词（如破限）放在最前面
+  const extraPrompt = options.skipExtraPrompt ? undefined : getCustomAppExtraPrompt(app.id);
+  if (extraPrompt) messages.unshift({ role: "system", content: extraPrompt });
   const timeoutMs = optionalCustomAppTimeoutMs(record.timeoutMs);
   const result = await withOptionalCustomAppTimeout(timeoutMs, "ai.chat", signal => (
     simpleLLMCall(config, messages, {
@@ -1364,7 +1372,7 @@ export async function runCustomAppAiClassify(app: InstalledCustomApp, record: Re
       { role: "system", content: `你是分类器。只能从以下标签中选择一个并输出标签原文：${labels.join(" / ")}` },
       { role: "user", content: text },
     ],
-  });
+  }, { skipExtraPrompt: true });
   const raw = cleanText(result.text, 500);
   const label = labels.find(item => raw.includes(item)) ?? raw.split(/\s+/)[0] ?? labels[0];
   return { label, raw };
