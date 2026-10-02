@@ -342,9 +342,6 @@ export function BindingManager() {
         mergeSlotInto(inherited, binding.defaults);
         if (level === "app" && selectedAppId) {
             mergeSlotInto(inherited, config.appDefaults?.[selectedAppId]);
-            // 自定义应用配了专属 API 时，角色下的该应用默认跟随专属 API，而不是全局/角色默认 API
-            const exclusiveApiId = getCustomAppExclusiveApiConfigId(config, selectedAppId);
-            if (exclusiveApiId) inherited.apiConfigId = exclusiveApiId;
         }
         return inherited;
     };
@@ -583,14 +580,18 @@ export function BindingManager() {
         slot: BindingSlot,
         emptyText: string,
         onOpenField: (field: BindingField) => void,
-        options?: { includeRegex?: boolean },
+        options?: { includeRegex?: boolean; lockedApiText?: string },
     ) => {
         const primaryFields: BindingField[] = ["apiConfigId", "voiceConfigId"];
         const compactFields: BindingField[] = options?.includeRegex === false
             ? ["presetId", "worldBookIds"]
             : ["presetId", "worldBookIds", "regexIds"];
         const renderBindingCard = (field: BindingField, variant: "large" | "small" | "wide") => {
-            const display = getSlotFieldDisplay(slot, field, emptyText);
+            // 自定义应用设了专属 API：这里的 API 不起作用，只显示锁定的专属 API，不能点
+            const locked = field === "apiConfigId" && options?.lockedApiText !== undefined;
+            const display = locked
+                ? { text: options!.lockedApiText!, isEmpty: false, isInherited: false }
+                : getSlotFieldDisplay(slot, field, emptyText);
             const valueClassName = [
                 "binding-choice-value",
                 display.isEmpty ? "is-empty" : "",
@@ -601,6 +602,7 @@ export function BindingManager() {
                     key={field}
                     type="button"
                     className={`binding-choice-card binding-choice-card-global binding-choice-card-${variant}`}
+                    disabled={locked}
                     onClick={() => {
                         reloadData();
                         onOpenField(field);
@@ -610,12 +612,12 @@ export function BindingManager() {
                         {renderBindingFieldIcon(field, variant === "wide" ? 23 : 20)}
                         <span className="binding-card-copy">
                             <span className="binding-choice-label">{getBindingFieldLabel(field)}</span>
-                            <span className="binding-choice-desc">{getBindingFieldDescription(field)}</span>
+                            <span className="binding-choice-desc">{locked ? "已由应用专属 API 决定" : getBindingFieldDescription(field)}</span>
                         </span>
                     </span>
                     <span className="binding-choice-row">
                         <span className={valueClassName}>{display.text}</span>
-                        <ChevronRight size={15} strokeWidth={1.7} className="binding-choice-chevron" />
+                        {!locked && <ChevronRight size={15} strokeWidth={1.7} className="binding-choice-chevron" />}
                     </span>
                 </button>
             );
@@ -1003,7 +1005,7 @@ export function BindingManager() {
                                     );
                                 })
                             )}
-                            <p className="binding-sheet-hint">角色下的这个应用默认跟随专属 API，也可以在角色绑定里单独改。</p>
+                            <p className="binding-sheet-hint">设了专属 API 后，这个应用里的所有角色都用它，不受全局和角色设置影响。</p>
                         </div>
                     </div>
                 </div>
@@ -1264,6 +1266,12 @@ export function BindingManager() {
                         <p className="settings-menu-section-title">App Binding</p>
                         {renderBindingSlotCards(currentSlot, inheritLabel, setActiveSlotSheetField, {
                             includeRegex: canBindRegexInApp(selectedAppId),
+                            lockedApiText: (() => {
+                                const exclusiveApiId = getCustomAppExclusiveApiConfigId(config, selectedAppId ?? undefined);
+                                if (!exclusiveApiId) return undefined;
+                                const api = apiConfigs.find(c => c.id === exclusiveApiId);
+                                return `专属：${api ? (api.name || api.provider) : "已设置"}`;
+                            })(),
                         })}
                     </section>
 

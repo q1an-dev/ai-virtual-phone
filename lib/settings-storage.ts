@@ -1039,8 +1039,8 @@ export function resolveBinding(
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
     };
 
-    // 自定义应用若在「辅助 API」里配了专属 API，API 走独立的一条线：
-    // 角色为该应用单独选的 API → 该应用的专属 API，不再继承全局默认/角色默认 API。
+    // 自定义应用配了专属 API 时，它就是最高优先级：所有角色都用它，
+    // 全局默认、角色默认、角色里给该应用单独选的 API 都不起作用。
     const customAppApiId = getCustomAppExclusiveApiConfigId(config, appId);
 
     if (!characterId) {
@@ -1058,11 +1058,11 @@ export function resolveBinding(
         applySlot(config.appDefaults[appId]!);
     }
 
-    if (customAppApiId) resolved.apiConfigId = customAppApiId;
-
     if (appId && charBinding?.appOverrides[appId]) {
         applySlot(charBinding.appOverrides[appId]!);
     }
+
+    if (customAppApiId) resolved.apiConfigId = customAppApiId;
 
     return resolved;
 }
