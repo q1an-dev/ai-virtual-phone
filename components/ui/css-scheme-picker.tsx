@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { getSchemes, saveScheme, deleteScheme, type CSSScheme } from "@/lib/css-scheme-storage";
+import { getSchemes, saveScheme, deleteScheme, overwriteScheme, nextAvailableSchemeName, type CSSScheme } from "@/lib/css-scheme-storage";
 import { Save, FolderOpen, Trash2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { CSSImportButton } from "@/components/ui/css-import-button";
@@ -59,12 +59,43 @@ export default function CSSSchemeBar({ target, onLoad, currentCSS, btnStyle, mod
 
   const btn = { ...defaultBtn, ...btnStyle };
 
-  const handleSave = () => {
-    if (!saveName.trim()) return;
-    const s = saveScheme(target, saveName.trim(), currentCSS);
-    setSchemes(prev => [...prev, s]);
-    setSaveName("");
+  // 名字和已有方案相同时，先让用户选「覆盖旧版」还是「另存为新版」
+  const [duplicateOf, setDuplicateOf] = useState<CSSScheme | null>(null);
+
+  const closeModal = () => {
     setModal(null);
+    setDuplicateOf(null);
+  };
+
+  const finishSave = () => {
+    setSchemes(getSchemes(target));
+    setSaveName("");
+    closeModal();
+  };
+
+  const handleSave = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const existing = getSchemes(target).find(s => s.name === name);
+    if (existing) {
+      setDuplicateOf(existing);
+      return;
+    }
+    saveScheme(target, name, currentCSS);
+    finishSave();
+  };
+
+  const handleOverwrite = () => {
+    if (!duplicateOf) return;
+    overwriteScheme(duplicateOf.id, currentCSS);
+    finishSave();
+  };
+
+  const handleSaveAsNew = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    saveScheme(target, nextAvailableSchemeName(target, name), currentCSS);
+    finishSave();
   };
 
   const handleLoad = (s: CSSScheme) => {
@@ -83,7 +114,7 @@ export default function CSSSchemeBar({ target, onLoad, currentCSS, btnStyle, mod
   return (
     <>
       <button
-        onClick={() => { setModal("save"); setSaveName(""); }}
+        onClick={() => { setSchemes(getSchemes(target)); setDuplicateOf(null); setModal("save"); setSaveName(""); }}
         disabled={!currentCSS.trim()}
         title="保存方案"
         style={{ ...btn, opacity: currentCSS.trim() ? 1 : 0.4 }}
@@ -101,7 +132,7 @@ export default function CSSSchemeBar({ target, onLoad, currentCSS, btnStyle, mod
 
       {modal && portalTarget ? createPortal(
         <div
-          onClick={() => setModal(null)}
+          onClick={closeModal}
           style={{
             position: "absolute", inset: 0, zIndex: 9999,
             background: "rgba(0,0,0,0.35)",
@@ -127,14 +158,47 @@ export default function CSSSchemeBar({ target, onLoad, currentCSS, btnStyle, mod
               <span style={{ fontSize: "calc(15px*var(--app-text-scale,1))", fontWeight: 600, color: v.text }}>
                 {modal === "save" ? "保存方案" : "加载方案"}
               </span>
-              <button onClick={() => setModal(null)} style={{ background: "none", border: "none", color: v.textDim, cursor: "pointer" }}>
+              <button onClick={closeModal} style={{ background: "none", border: "none", color: v.textDim, cursor: "pointer" }}>
                 <X size={18} />
               </button>
             </div>
 
             {/* Body */}
             <div style={{ padding: 16 }}>
-              {modal === "save" ? (
+              {modal === "save" && duplicateOf ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ fontSize: "calc(13px*var(--app-text-scale,1))", color: v.text, lineHeight: 1.6 }}>
+                    已有同名方案「{duplicateOf.name}」，要怎么保存？
+                  </div>
+                  <button
+                    onClick={handleOverwrite}
+                    style={{
+                      height: 40, borderRadius: 8, border: "none",
+                      background: v.accent, color: "#fff",
+                      fontSize: "calc(14px*var(--app-text-scale,1))", fontWeight: 500, cursor: "pointer",
+                    }}
+                  >
+                    覆盖旧版
+                  </button>
+                  <button
+                    onClick={handleSaveAsNew}
+                    style={{
+                      height: 40, borderRadius: 8,
+                      border: `1px solid ${v.inputBorder}`, background: v.input, color: v.text,
+                      fontSize: "calc(14px*var(--app-text-scale,1))", cursor: "pointer",
+                    }}
+                  >
+                    保留旧版，另存为「{nextAvailableSchemeName(target, duplicateOf.name)}」
+                  </button>
+                  <button
+                    onClick={() => setDuplicateOf(null)}
+                    style={{ background: "none", border: "none", color: v.textDim, fontSize: "calc(12px*var(--app-text-scale,1))", cursor: "pointer" }}
+                  >
+                    返回改名字
+                  </button>
+                </div>
+              ) : modal === "save" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     ref={inputRef}
@@ -161,6 +225,31 @@ export default function CSSSchemeBar({ target, onLoad, currentCSS, btnStyle, mod
                   >
                     保存
                   </button>
+                </div>
+                {schemes.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={{ fontSize: "calc(12px*var(--app-text-scale,1))", color: v.textDim }}>
+                      要更新已有方案？点一下名字填入：
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 120, overflowY: "auto" }}>
+                      {schemes.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => setSaveName(s.name)}
+                          style={{
+                            maxWidth: "100%", padding: "4px 10px", borderRadius: 999,
+                            border: `1px solid ${saveName.trim() === s.name ? v.accent : v.inputBorder}`,
+                            background: v.input, color: v.text,
+                            fontSize: "calc(12px*var(--app-text-scale,1))", cursor: "pointer",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 280, overflowY: "auto" }}>

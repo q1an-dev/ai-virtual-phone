@@ -11,6 +11,7 @@ export type CSSScheme = {
   css: string;
   target: string; // "global" | "chat_app" | "chat_session" | "story" | "music" | "calendar"
   createdAt: string;
+  updatedAt?: string;
 };
 
 function loadAll(): CSSScheme[] {
@@ -43,6 +44,26 @@ export function saveScheme(target: string, name: string, css: string): CSSScheme
   all.push(scheme);
   saveAll(all);
   return scheme;
+}
+
+/** 用当前 CSS 覆盖已有方案（保留 id 和名字） */
+export function overwriteScheme(id: string, css: string): CSSScheme | null {
+  const all = loadAll();
+  const s = all.find(x => x.id === id);
+  if (!s) return null;
+  s.css = css;
+  s.updatedAt = new Date().toISOString();
+  saveAll(all);
+  return { ...s };
+}
+
+/** 同一目标下不重名的方案名：「名字」已存在时依次试「名字 (2)」「名字 (3)」… */
+export function nextAvailableSchemeName(target: string, name: string): string {
+  const taken = new Set(getSchemes(target).map(s => s.name));
+  if (!taken.has(name)) return name;
+  let n = 2;
+  while (taken.has(`${name} (${n})`)) n += 1;
+  return `${name} (${n})`;
 }
 
 /** Delete a scheme by id */
