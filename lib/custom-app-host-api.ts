@@ -55,6 +55,8 @@ import {
   loadVoiceConfigs,
   loadWorldBooks,
   resolveAuxiliaryApiConfig,
+  getCustomAppExclusiveApiConfigId,
+  getCustomAppExtraPrompt,
   resolveBinding,
   resolveUserIdentity,
   ensureSettingsStorageHydrated,
@@ -274,39 +276,23 @@ function resolveCustomAppApiConfig(app: InstalledCustomApp, record: Record<strin
   const apiConfigs = loadApiConfigs();
   const explicitId = cleanText(record.apiConfigId ?? record.configId, 160);
   if (explicitId) return apiConfigs.find(config => config.id === explicitId) ?? null;
-  
   const bindings = loadBindingConfig();
+  const appBindingId = `custom_app:${app.id}`;
   const characterId = cleanText(record.characterId, 160);
-
-  if (characterId) {
-    // 优先级 1：角色为该自定义APP绑定的专属API
-    const appSlot = resolveBinding(bindings, characterId, `custom_app:${app.id}`);
-    if (appSlot.apiConfigId) {
-      const found = apiConfigs.find(config => config.id === appSlot.apiConfigId);
-      if (found) return found;
-    }
-  }
-
-  // 优先级 2：全局为该自定义APP绑定的专属API
-  if (bindings.customAppApiConfigs?.[app.id]) {
-    const found = apiConfigs.find(config => config.id === bindings.customAppApiConfigs![app.id]);
+  // 该应用配了专属 API 时，resolveBinding 只会给出「角色为该应用单独选的 API」或「应用专属 API」，
+  // 与全局默认/角色默认 API 互不干扰；没配时保持原来的继承顺序。
+  const appSlot = resolveBinding(bindings, characterId || undefined, appBindingId);
+  if (appSlot.apiConfigId) {
+    const found = apiConfigs.find(config => config.id === appSlot.apiConfigId);
     if (found) return found;
   }
-
-  // 兜底 1：角色的默认设定
-  // 这里必须用直接读 defaults 而不是 resolveBinding("chat")，
-  // 因为 resolveBinding 会一直往上追溯，导致它拿到系统的 globalDefaults。
-  // 我们只想要：如果角色【自己明确配了 defaults】，那就用角色的。
-  // 否则，应该让它掉到下面，使用系统的 globalDefaults。
   if (characterId) {
-    const charBinding = bindings.characterBindings.find(b => b.characterId === characterId);
-    if (charBinding?.defaults?.apiConfigId) {
-      const found = apiConfigs.find(config => config.id === charBinding.defaults.apiConfigId);
+    const chatSlot = resolveBinding(bindings, characterId, "chat");
+    if (chatSlot.apiConfigId) {
+      const found = apiConfigs.find(config => config.id === chatSlot.apiConfigId);
       if (found) return found;
     }
   }
-  
-  // 兜底 2：系统全局默认 API
   if (bindings.globalDefaults.apiConfigId) {
     const found = apiConfigs.find(config => config.id === bindings.globalDefaults.apiConfigId);
     if (found) return found;
@@ -1327,7 +1313,11 @@ export async function saveCustomAppMedia(record: Record<string, unknown>): Promi
   };
 }
 
-export async function runCustomAppAiChat(app: InstalledCustomApp, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function runCustomAppAiChat(
+  app: InstalledCustomApp,
+  record: Record<string, unknown>,
+  options: { skipExtraPrompt?: boolean } = {},
+): Promise<Record<string, unknown>> {
   const config = resolveCustomAppApiConfig(app, record);
   if (!config) throw new Error("未找到可用 API 配置。");
   const rawMessages = Array.isArray(record.messages) ? record.messages : [];
@@ -1344,6 +1334,9 @@ export async function runCustomAppAiChat(app: InstalledCustomApp, record: Record
       String(record.system ?? "").trim() ? { role: "system", content: String(record.system ?? "") } : null,
       { role: "user", content: String(record.prompt ?? record.input ?? record.content ?? "").trim() || "请继续。" },
     ].filter(Boolean) as { role: string; content: string }[];
+  // 自定义应用通用提示词（如破限）放在最前面
+  const extraPrompt = options.skipExtraPrompt ? undefined : getCustomAppExtraPrompt(app.id);
+  if (extraPrompt) messages.unshift({ role: "system", content: extraPrompt });
   const timeoutMs = optionalCustomAppTimeoutMs(record.timeoutMs);
   const result = await withOptionalCustomAppTimeout(timeoutMs, "ai.chat", signal => (
     simpleLLMCall(config, messages, {
@@ -1379,7 +1372,7 @@ export async function runCustomAppAiClassify(app: InstalledCustomApp, record: Re
       { role: "system", content: `你是分类器。只能从以下标签中选择一个并输出标签原文：${labels.join(" / ")}` },
       { role: "user", content: text },
     ],
-  });
+  }, { skipExtraPrompt: true });
   const raw = cleanText(result.text, 500);
   const label = labels.find(item => raw.includes(item)) ?? raw.split(/\s+/)[0] ?? labels[0];
   return { label, raw };
@@ -2103,7 +2096,8 @@ export async function generateCustomAppGroupText(app: InstalledCustomApp, record
   const completion = await generateGroupRawCompletion(session, history, {
     appTags,
     promptProfile: profile ?? undefined,
-    apiConfigId: cleanText(record.apiConfigId ?? record.configId, 160) || undefined,
+    apiConfigId: cleanText(record.apiConfigId ?? record.configId, 160)
+      || getCustomAppExclusiveApiConfigId(loadBindingConfig(), `custom_app:${app.id}`),
     appId: `custom_app:${app.id}`,
   });
   const text = cleanUnboundedText(completion.text);

@@ -1195,8 +1195,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return () => window.removeEventListener(CHAT_PLUGIN_TOAST_EVENT, handler);
     }, []);
 
+    // 线下模式有单独设的背景就用它，没有则沿用线上背景
+    const activeBackgroundImage = (offlineMode && session.offlineBackgroundImage) || session.backgroundImage;
     const [bgImageResolved, setBgImageResolved] = useState<string | null>(null);
-    const [bgLoading, setBgLoading] = useState(!!session.backgroundImage);
+    const [bgLoading, setBgLoading] = useState(!!activeBackgroundImage);
 
     const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -1255,27 +1257,31 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     }, [messages]);
 
     useEffect(() => {
-        if (!session.backgroundImage) {
+        if (!activeBackgroundImage) {
             setBgImageResolved(null);
             setBgLoading(false);
             return;
         }
-        if (session.backgroundImage.startsWith("data:") || session.backgroundImage.startsWith("http")) {
-            setBgImageResolved(session.backgroundImage);
+        if (activeBackgroundImage.startsWith("data:") || activeBackgroundImage.startsWith("http")) {
+            setBgImageResolved(activeBackgroundImage);
             setBgLoading(false);
             return;
         }
         // It's an ID — load from IndexedDB
+        let cancelled = false;
         setBgLoading(true);
         import("@/lib/chat-asset-storage").then(({ getChatImageFromIndexedDB }) => {
-            getChatImageFromIndexedDB(session.backgroundImage!).then(dataUrl => {
+            getChatImageFromIndexedDB(activeBackgroundImage).then(dataUrl => {
+                // 线上/线下快速切换时，只采用最后一次的结果
+                if (cancelled) return;
                 if (dataUrl) {
                     setBgImageResolved(dataUrl);
                 }
                 setBgLoading(false);
             });
         });
-    }, [session.backgroundImage]);
+        return () => { cancelled = true; };
+    }, [activeBackgroundImage]);
 
     // Message Actions state
     const [activeMessageId, setActiveMessageId] = useState<string | null>(null);

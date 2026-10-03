@@ -981,6 +981,14 @@ export function removeApiConfigReferences(apiConfigId: string): void {
             changed = true;
         }
     }
+    if (config.customAppApiConfigs) {
+        const customAppApiConfigs: Record<string, string> = {};
+        for (const [customAppId, id] of Object.entries(config.customAppApiConfigs)) {
+            if (id === apiConfigId) changed = true;
+            else customAppApiConfigs[customAppId] = id;
+        }
+        next.customAppApiConfigs = customAppApiConfigs;
+    }
     if (changed) saveBindingConfig(next);
 }
 
@@ -1031,7 +1039,14 @@ export function resolveBinding(
         if (slot.regexIds && slot.regexIds.length > 0) resolved.regexIds = [...slot.regexIds];
     };
 
-    if (!characterId) return resolved;
+    // 自定义应用配了专属 API 时，它就是最高优先级：所有角色都用它，
+    // 全局默认、角色默认、角色里给该应用单独选的 API 都不起作用。
+    const customAppApiId = getCustomAppExclusiveApiConfigId(config, appId);
+
+    if (!characterId) {
+        if (customAppApiId) resolved.apiConfigId = customAppApiId;
+        return resolved;
+    }
 
     // Apply character defaults
     const charBinding = config.characterBindings.find(b => b.characterId === characterId);
@@ -1047,7 +1062,29 @@ export function resolveBinding(
         applySlot(charBinding.appOverrides[appId]!);
     }
 
+    if (customAppApiId) resolved.apiConfigId = customAppApiId;
+
     return resolved;
+}
+
+/**
+ * 自定义应用通用提示词：appId 形如 custom_app:xxx，或直接传应用 id。
+ * 没填、或该应用被关掉时返回 undefined。
+ */
+export function getCustomAppExtraPrompt(appId: string | undefined, config: BindingConfig = loadBindingConfig()): string | undefined {
+    if (!appId) return undefined;
+    const customAppId = appId.startsWith("custom_app:") ? appId.slice("custom_app:".length) : appId;
+    const prompt = config.customAppExtraPrompt?.trim();
+    if (!prompt || !customAppId) return undefined;
+    if (config.customAppExtraPromptDisabledIds?.includes(customAppId)) return undefined;
+    return prompt;
+}
+
+/** 自定义应用（appId 形如 custom_app:xxx）在设置里配的专属 API；没配返回 undefined。 */
+export function getCustomAppExclusiveApiConfigId(config: BindingConfig, appId?: string): string | undefined {
+    if (!appId?.startsWith("custom_app:")) return undefined;
+    const customAppId = appId.slice("custom_app:".length);
+    return config.customAppApiConfigs?.[customAppId] || undefined;
 }
 
 /**

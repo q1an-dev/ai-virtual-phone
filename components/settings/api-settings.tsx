@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useContext } from "react";
-import { Plus, RefreshCw, Rss, AlertCircle, FileEdit, Trash2, X, Check } from "lucide-react";
+import { Plus, RefreshCw, Rss, AlertCircle, FileEdit, Copy, Trash2, X, Check } from "lucide-react";
 import { SettingsContext } from "../phone-settings-app";
 import type { ApiConfig } from "@/lib/settings-types";
 import { loadApiConfigs, removeApiConfigReferences, saveApiConfigs } from "@/lib/settings-storage";
@@ -94,6 +94,21 @@ export function ApiSettings() {
 
     const updateConfig = (id: string, updates: Partial<ApiConfig>) => {
         persist(configs.map(c => c.id === id ? { ...c, ...updates } : c));
+    };
+
+    // 复制一份配置（地址、密钥、模型等全部照抄），放在原配置后面并直接打开编辑，方便只改模型
+    const duplicateConfig = (id: string) => {
+        const index = configs.findIndex(c => c.id === id);
+        if (index < 0) return;
+        const source = configs[index];
+        const copy: ApiConfig = {
+            ...(JSON.parse(JSON.stringify(source)) as ApiConfig),
+            id: `config-${Date.now()}`,
+            name: `${source.name || source.provider} 副本`,
+        };
+        persist([...configs.slice(0, index + 1), copy, ...configs.slice(index + 1)]);
+        setIsNewConfig(false);
+        setEditingId(copy.id);
     };
 
     const removeConfig = (id: string) => {
@@ -263,6 +278,18 @@ export function ApiSettings() {
                                     className="ui-link-btn"
                                 >
                                     <FileEdit size={18} />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        duplicateConfig(config.id);
+                                    }}
+                                    className="ui-link-btn"
+                                    aria-label={`复制 ${config.name || config.provider}`}
+                                    title="复制一份"
+                                >
+                                    <Copy size={18} />
                                 </button>
                                 <button
                                     type="button"

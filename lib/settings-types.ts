@@ -320,6 +320,10 @@ export type BindingConfig = {
     reasoningTranslateApiConfigId?: string;
     /** Custom App specific API: map of customAppId to apiConfigId (global, not per-character) */
     customAppApiConfigs?: Record<string, string>;
+    /** 自定义应用通用提示词（如破限）：所有自定义应用的每次 AI 请求都放在最前面 */
+    customAppExtraPrompt?: string;
+    /** 不带通用提示词的自定义应用 id（默认全部都带） */
+    customAppExtraPromptDisabledIds?: string[];
 };
 
 // --- Chat Toolbox ---

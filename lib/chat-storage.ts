@@ -42,6 +42,8 @@ export type ChatSession = {
     updatedAt: string; // ISO date
     isPinned: boolean;
     backgroundImage?: string; // Add support for custom background
+    /** 线下模式的聊天背景；没设时沿用 backgroundImage */
+    offlineBackgroundImage?: string;
     autoReplied?: boolean; // Whether the initial greeting auto-reply has been triggered
     alias?: string;
     videoBackground?: string;
